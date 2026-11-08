@@ -1,143 +1,54 @@
 "use client";
+import { useEffect, useMemo, useState } from "react";
+import { buildRows, parseCSV, runBacktest, type Candle, type StockRow, type Trade } from "@/lib/engine";
 
-import { useMemo, useState } from "react";
-import {
-  Activity, ArrowDownRight, ArrowUpRight, Bell, Bookmark, BookmarkCheck,
-  ChevronDown, Filter, Gauge, LayoutDashboard, ListFilter, Menu, Search,
-  Settings2, SlidersHorizontal, Sparkles, TrendingUp, X, Zap
-} from "lucide-react";
-import {
-  Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis
-} from "recharts";
-import { breadth, chartData, stocks, type Stock } from "@/lib/data";
-
-type Tab = "Overview" | "All stocks" | "Breakouts" | "Swing radar" | "Backtest lab";
-const money = (n: number) => "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-export default function Home() {
-  const [tab, setTab] = useState<Tab>("Overview");
-  const [query, setQuery] = useState("");
-  const [signal, setSignal] = useState("All signals");
-  const [sector, setSector] = useState("All sectors");
-  const [minChange, setMinChange] = useState("-10");
-  const [maxPrice, setMaxPrice] = useState("10000");
-  const [watch, setWatch] = useState<string[]>(["BEL", "ICICIBANK"]);
-  const [mobile, setMobile] = useState(false);
-  const [capital, setCapital] = useState("100000");
-  const [target, setTarget] = useState("10");
-  const [stop, setStop] = useState("5");
-  const [ran, setRan] = useState(false);
-
-  const filtered = useMemo(() => stocks.filter((s) =>
-    (s.symbol.toLowerCase().includes(query.toLowerCase()) || s.name.toLowerCase().includes(query.toLowerCase())) &&
-    (signal === "All signals" || s.signal === signal) &&
-    (sector === "All sectors" || s.sector === sector) &&
-    s.change >= Number(minChange) && s.price <= Number(maxPrice)
-  ), [query, signal, sector, minChange, maxPrice]);
-
-  const toggleWatch = (symbol: string) => setWatch((w) => w.includes(symbol) ? w.filter((x) => x !== symbol) : [...w, symbol]);
-  const nav: Tab[] = ["Overview", "All stocks", "Breakouts", "Swing radar", "Backtest lab"];
-  const nav: Tab[] = ["Overview", "All stocks", "Breakouts", "Swing radar", "Backtest lab"];
-  const shown = tab === "Breakouts"
-    ? filtered.filter((s) => s.change >= 2 && s.relativeVolume >= 1.5)
-    : tab === "Swing radar"
-      ? filtered.filter((s) => s.rsi >= 52 && s.relativeVolume >= 1.2)
-      : filtered;
-
-  const tableSection = (
-    <section className="panel screener-panel">
-      <div className="panel-head">
-        <div>
-          <div className="eyebrow">{tab === "Overview" ? "QUICK SCAN" : "STOCK UNIVERSE"}</div>
-          <h2>{tab === "Overview" ? "Stocks in focus" : tab === "Breakouts" ? "Breakout candidates" : tab === "Swing radar" ? "Swing momentum candidates" : "Explore stocks"}</h2>
-          <p>{shown.length} matches in illustrative NSE sample universe</p>
-        </div>
-        <button className="btn secondary compact" onClick={() => setTab("All stocks")}><ListFilter size={14} /> Full screener</button>
-      </div>
-      <div className="filters">
-        <div className="searchbox"><Search size={16} /><input placeholder="Search symbol or company..." value={query} onChange={(e) => setQuery(e.target.value)} />{query && <button onClick={() => setQuery("")}><X size={14} /></button>}</div>
-        <select value={signal} onChange={(e) => setSignal(e.target.value)}><option>All signals</option><option>Bullish</option><option>Bearish</option><option>Neutral</option></select>
-        <select value={sector} onChange={(e) => setSector(e.target.value)}><option>All sectors</option>{Array.from(new Set(stocks.map((s) => s.sector))).sort().map((x) => <option key={x}>{x}</option>)}</select>
-        <div className="filter-number"><span>Min change %</span><input value={minChange} onChange={(e) => setMinChange(e.target.value)} type="number" /></div>
-        <div className="filter-number"><span>Max price ₹</span><input value={maxPrice} onChange={(e) => setMaxPrice(e.target.value)} type="number" /></div>
-      </div>
-      <div className="table-scroll">
-        <table><thead><tr><th>STOCK</th><th>SECTOR</th><th className="right">LAST PRICE</th><th className="right">CHANGE</th><th className="right">RSI (14)</th><th className="right">REL. VOL</th><th>SIGNAL</th><th /></tr></thead>
-          <tbody>{shown.slice(0, tab === "Overview" ? 6 : 30).map((s) => <StockRow key={s.symbol} stock={s} saved={watch.includes(s.symbol)} onSave={() => toggleWatch(s.symbol)} />)}</tbody>
-        </table>
-        {shown.length === 0 && <div className="empty-table">No stocks match these filters. Try adjusting your criteria.</div>}
-      </div>
-      <div className="table-footer"><span>Showing {Math.min(shown.length, tab === "Overview" ? 6 : 30)} of {shown.length} stocks · Demo universe</span><button className="text-btn" onClick={() => setTab("All stocks")}>Explore universe <ArrowUpRight size={14} /></button></div>
-    </section>
-  );
-
-  const overviewContent = (
-    <>
-      <div className="dashboard-grid">
-        <section className="panel chart-panel">
-          <div className="panel-head"><div><div className="eyebrow">MARKET TREND</div><h2>Nifty 50 · Intraday view</h2></div><div className="chart-controls"><span className="tag green">+0.84%</span><button className="period active">1D</button><button className="period">1W</button><button className="period">1M</button></div></div>
-          <div className="chart-summary"><b>22,482.15</b><span className="positive"><ArrowUpRight size={14} /> +187.40 (0.84%)</span></div>
-          <div className="chart-wrap"><ResponsiveContainer width="100%" height="100%"><AreaChart data={chartData}><defs><linearGradient id="fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#21c997" stopOpacity={0.24} /><stop offset="100%" stopColor="#21c997" stopOpacity={0} /></linearGradient></defs><CartesianGrid stroke="#222c37" vertical={false} /><XAxis dataKey="day" tick={{ fill: "#778391", fontSize: 10 }} axisLine={false} tickLine={false} /><YAxis domain={["dataMin-80", "dataMax+80"]} orientation="right" tick={{ fill: "#778391", fontSize: 10 }} axisLine={false} tickLine={false} /><Tooltip contentStyle={{ background: "#111923", border: "1px solid #2a3745", borderRadius: 10, color: "#edf2f7" }} /><Area type="monotone" dataKey="value" stroke="#25c99a" strokeWidth={2.2} fill="url(#fill)" /></AreaChart></ResponsiveContainer></div>
-          <div className="chart-foot"><span><i className="legend-dot" /> NIFTY 50 · DEMO SERIES</span><span>09:20 — 15:30 IST</span></div>
-        </section>
-        <section className="panel movers-panel">
-          <div className="panel-head"><div><div className="eyebrow">MARKET ACTIVITY</div><h2>Top movers</h2></div><button className="text-btn" onClick={() => setTab("All stocks")}>View all <ArrowUpRight size={14} /></button></div>
-          <div className="movers-list">{[...stocks].sort((a, b) => b.change - a.change).slice(0, 5).map((s) => <div className="mover" key={s.symbol}><div className="ticker-icon">{s.symbol.slice(0, 2)}</div><div className="mover-name"><b>{s.symbol}</b><small>{s.sector}</small></div><div className="mover-price"><b>{money(s.price)}</b><small className={s.change >= 0 ? "positive" : "negative"}>{s.change > 0 ? "+" : ""}{s.change.toFixed(2)}%</small></div></div>)}</div>
-        </section>
-      </div>
-      {tableSection}
-      <div className="bottom-grid">
-        <section className="panel"><div className="panel-head"><div><div className="eyebrow">MARKET BREADTH</div><h2>Participation snapshot</h2></div><span className="tag">50 STOCKS</span></div><div className="breadth"><div className="breadth-bar"><span style={{ width: "62%" }} /><span style={{ width: "28%" }} /><span style={{ width: "10%" }} /></div><div className="breadth-legend">{breadth.map((b) => <div key={b.name}><i style={{ background: b.color }} /><span>{b.name}</span><b>{b.value}</b></div>)}</div></div></section>
-        <section className="panel"><div className="panel-head"><div><div className="eyebrow">SCANNER SHORTCUTS</div><h2>Find your setup</h2></div></div><div className="shortcut-list"><button onClick={() => setTab("Breakouts")}><span className="shortcut-icon green-bg"><TrendingUp size={16} /></span><span><b>Breakout radar</b><small>Price strength + relative volume</small></span><ArrowUpRight size={15} /></button><button onClick={() => setTab("Swing radar")}><span className="shortcut-icon blue-bg"><Activity size={16} /></span><span><b>Swing momentum</b><small>RSI + volume confirmation</small></span><ArrowUpRight size={15} /></button><button onClick={() => setTab("Backtest lab")}><span className="shortcut-icon purple-bg"><Gauge size={16} /></span><span><b>Risk calculator</b><small>Target, stop and reward-to-risk</small></span><ArrowUpRight size={15} /></button></div></section>
-      </div>
-    </>
-  );
-
-  const backtestContent = (
-    <section className="panel backtest">
-      <div className="panel-head"><div><div className="eyebrow">STRATEGY WORKBENCH</div><h2>Quick backtest calculator</h2><p>Explore a simple hypothetical target / stop framework.</p></div><span className="tag">SIMULATION ONLY</span></div>
-      <div className="backtest-grid">
-        <div className="form-card"><label>Starting capital (₹)</label><input value={capital} onChange={(e) => setCapital(e.target.value)} type="number" /><label>Target (%)</label><input value={target} onChange={(e) => setTarget(e.target.value)} type="number" /><label>Stop loss (%)</label><input value={stop} onChange={(e) => setStop(e.target.value)} type="number" /><button className="btn primary full" onClick={() => setRan(true)}>Calculate scenario <ArrowUpRight size={15} /></button></div>
-        <div className="result-card">{ran ? <><span className="eyebrow">RISK / REWARD PROFILE</span><h3>{(Number(target) / Math.max(Number(stop), 0.01)).toFixed(2)}R</h3><p>Reward-to-risk ratio based on your inputs.</p><div className="result-row"><span>Potential gain at target</span><b className="positive">{money(Number(capital) * Number(target) / 100)}</b></div><div className="result-row"><span>Potential loss at stop</span><b className="negative">{money(Number(capital) * Number(stop) / 100)}</b></div><div className="result-row"><span>Break-even win rate*</span><b>{(100 * Number(stop) / (Number(target) + Number(stop))).toFixed(1)}%</b></div><small>*Before brokerage, taxes, slippage and gaps. This is not a historical backtest.</small></> : <div className="empty-state"><Gauge size={30} /><b>Your scenario will appear here</b><span>Adjust the inputs and run the calculator.</span></div>}</div>
-      </div>
-    </section>
-  );
-
-  return (
-    <main className="shell">
-      <aside className={`sidebar ${mobile ? "mobile-open" : ""}`}>
-        <div className="brand"><div className="brand-mark">U<span>G</span></div><div><b>UGB<span>Screener</span></b><small>MARKET INTELLIGENCE</small></div><button className="mobile-close" onClick={() => setMobile(false)}><X size={17} /></button></div>
-        <div className="workspace"><div className="workspace-icon">U</div><div><b>Underground Bulls</b><small>Personal workspace</small></div><ChevronDown size={14} /></div>
-        <div className="nav-label">WORKSPACE</div>
-        <nav>{nav.map((n, i) => <button key={n} className={`nav-item ${tab === n ? "active" : ""}`} onClick={() => { setTab(n); setMobile(false); }}>{[<LayoutDashboard key="dashboard" />, <ListFilter key="list" />, <Zap key="zap" />, <Activity key="activity" />, <Gauge key="gauge" />][i]}<span>{n}</span>{n === "Breakouts" && <em>5</em>}</button>)}</nav>
-        <div className="nav-label spaced">YOUR TOOLS</div>
-        <button className="nav-item" onClick={() => setTab("All stocks")}><Bookmark size={17} /><span>My watchlist</span><em>{watch.length}</em></button>
-        <button className="nav-item" onClick={() => setTab("All stocks")}><SlidersHorizontal size={17} /><span>Custom screeners</span></button>
-        <div className="sidebar-bottom"><div className="upgrade"><div className="upgrade-icon"><Sparkles size={16} /></div><b>Built for sharper decisions.</b><p>Find your next setup with a focused market view.</p><button onClick={() => setTab("Swing radar")}>Explore scanners <ArrowUpRight size={14} /></button></div><div className="profile"><div className="avatar">UG</div><div><b>UGB Trader</b><small>Free workspace</small></div><Settings2 size={17} /></div></div>
-      </aside>
-      <section className="main">
-        <header className="topbar"><button className="hamburger" onClick={() => setMobile(!mobile)}><Menu /></button><div className="crumb">Workspace <span>/</span> <b>{tab}</b></div><div className="top-actions"><div className="market-status"><i /> MARKET CLOSED <span>·</span> DEMO MODE</div><button className="icon-btn" aria-label="Notifications"><Bell size={18} /><i /></button><div className="top-avatar">UG</div></div></header>
-        <div className="content">
-          <div className="page-head"><div><div className="eyebrow"><span /> YOUR MARKET EDGE</div><h1>{tab === "Overview" ? "Market overview" : tab}</h1><p>{tab === "Overview" ? "A clearer view of market activity, momentum and potential setups." : "Scan the market, narrow your universe and focus on the signals that matter."}</p></div><div className="head-actions"><button className="btn secondary" onClick={() => { setQuery(""); setSignal("All signals"); setSector("All sectors"); setMinChange("-10"); setMaxPrice("10000"); }}><Filter size={15} /> Reset filters</button><button className="btn primary" onClick={() => setTab("All stocks")}><Zap size={15} /> Open scanner</button></div></div>
-          <div className="notice"><div><Sparkles size={15} /><b>Preview environment</b><span>Illustrative market data is shown. Connect a licensed data provider for live NSE quotes.</span></div><span className="demo-pill">DEMO DATA</span></div>
-          <div className="metric-grid">
-            <Metric title="NIFTY 50" value="22,482.15" change="+0.84%" positive sub="Illustrative snapshot" />
-            <Metric title="NIFTY BANK" value="48,216.70" change="+0.62%" positive sub="Illustrative snapshot" />
-            <Metric title="ADVANCE / DECLINE" value="31 / 14" change="+17 net advances" positive sub="50-stock sample universe" />
-            <Metric title="HIGH RELATIVE VOLUME" value="08" change="Across sample universe" positive sub="Relative volume above 1.5x" />
-          </div>
-          {tab === "Backtest lab" ? backtestContent : tab === "Overview" ? overviewContent : tableSection}
-          <footer><span>UGBScreener <b>·</b> Built for process, not predictions.</span><span>Demo build 0.1.1 <b>·</b> Not investment advice</span></footer>
-        </div>
-      </section>
-    </main>
-  );
+type Tab="Overview"|"Stock Screener"|"Scanner Library"|"Strategy Lab"|"Backtest"|"Watchlist"|"Data Center";
+const demo:StockRow[]=[
+ {symbol:"RELIANCE",price:1468.35,change:2.84,rsi:64,relVol:1.8,high20:1455,low20:1390,sma20:1420,sma50:1388,signal:"Bullish",candles:[]},
+ {symbol:"HDFCBANK",price:1762.8,change:1.42,rsi:58,relVol:1.3,high20:1780,low20:1690,sma20:1730,sma50:1680,signal:"Bullish",candles:[]},
+ {symbol:"ICICIBANK",price:1298.5,change:2.16,rsi:67,relVol:2.1,high20:1300,low20:1240,sma20:1260,sma50:1200,signal:"Bullish",candles:[]},
+ {symbol:"TCS",price:3988.2,change:-.86,rsi:46,relVol:.9,high20:4110,low20:3940,sma20:4010,sma50:4080,signal:"Neutral",candles:[]},
+ {symbol:"INFY",price:1842.6,change:-1.34,rsi:39,relVol:1.1,high20:1900,low20:1820,sma20:1870,sma50:1920,signal:"Bearish",candles:[]},
+ {symbol:"BEL",price:312.45,change:4.18,rsi:69,relVol:3.2,high20:310,low20:286,sma20:298,sma50:280,signal:"Bullish",candles:[]},
+ {symbol:"SBIN",price:824.7,change:.64,rsi:53,relVol:1,high20:830,low20:798,sma20:816,sma50:800,signal:"Neutral",candles:[]},
+ {symbol:"TRENT",price:6128,change:3.72,rsi:72,relVol:2.7,high20:6000,low20:5600,sma20:5800,sma50:5500,signal:"Bullish",candles:[]},
+ {symbol:"SUNPHARMA",price:1764.1,change:1.08,rsi:57,relVol:.8,high20:1780,low20:1700,sma20:1740,sma50:1690,signal:"Neutral",candles:[]},
+ {symbol:"COALINDIA",price:421.8,change:2.34,rsi:63,relVol:1.7,high20:420,low20:398,sma20:410,sma50:390,signal:"Bullish",candles:[]}
+];
+const fmt=(n:number)=>"₹"+n.toLocaleString("en-IN",{maximumFractionDigits:2});
+const pct=(n:number)=>`${n>=0?"+":""}${n.toFixed(2)}%`;
+export default function Home(){
+ const [tab,setTab]=useState<Tab>("Overview"),[candles,setCandles]=useState<Candle[]>([]),[watch,setWatch]=useState<string[]>([]),[query,setQuery]=useState(""),[bias,setBias]=useState("All"),[minRsi,setMinRsi]=useState("0"),[minVol,setMinVol]=useState("0"),[scanner,setScanner]=useState("Momentum + Volume"),[target,setTarget]=useState("8"),[stop,setStop]=useState("4"),[hold,setHold]=useState("15"),[trades,setTrades]=useState<Trade[]>([]),[error,setError]=useState(""),[menu,setMenu]=useState(false),[dataTab,setDataTab]=useState("Upload OHLCV");
+ useEffect(()=>{try{setWatch(JSON.parse(localStorage.getItem("ugb-watch")||"[]"));const saved=localStorage.getItem("ugb-candles");if(saved)setCandles(JSON.parse(saved));}catch{}},[]);
+ useEffect(()=>{try{localStorage.setItem("ugb-watch",JSON.stringify(watch));}catch{}},[watch]);
+ useEffect(()=>{try{localStorage.setItem("ugb-candles",JSON.stringify(candles));}catch{}},[candles]);
+ const rows=useMemo(()=>candles.length?buildRows(candles):demo,[candles]);
+ const filtered=useMemo(()=>rows.filter(s=>(s.symbol.toLowerCase().includes(query.toLowerCase()))&&(bias==="All"||s.signal===bias)&&s.rsi>=Number(minRsi)&&s.relVol>=Number(minVol)),[rows,query,bias,minRsi,minVol]);
+ const bullish=rows.filter(x=>x.signal==="Bullish").length,bearish=rows.filter(x=>x.signal==="Bearish").length;
+ const runScan=()=>{let a=rows;if(scanner==="Breakout Watch")a=rows.filter(x=>x.price>x.high20);else if(scanner==="High Momentum")a=rows.filter(x=>x.rsi>=60&&x.relVol>=1.5);else if(scanner==="Oversold Reversal")a=rows.filter(x=>x.rsi<=35);else if(scanner==="Trend Template")a=rows.filter(x=>x.price>x.sma20&&x.sma20>x.sma50);else if(scanner==="Volume Expansion")a=rows.filter(x=>x.relVol>=2);setQuery("");setBias("All");setMinRsi(scanner==="Oversold Reversal"?"0":scanner==="High Momentum"?"60":"0");setMinVol(scanner==="Volume Expansion"?"2":scanner==="High Momentum"?"1.5":"0");setTab("Stock Screener");};
+ const upload=async(file?:File)=>{if(!file)return;try{const text=await file.text();const parsed=parseCSV(text);setCandles(parsed);setError("");setTab("Stock Screener");}catch(e){setError(e instanceof Error?e.message:"Could not read CSV");}};
+ const backtest=()=>{if(!candles.length){setError("Upload historical OHLCV CSV first. Demo rows are not historical data.");setTab("Data Center");return;}const t=runBacktest(buildRows(candles),Number(target),Number(stop),Number(hold));setTrades(t);setError("");};
+ const nav:Tab[]=["Overview","Stock Screener","Scanner Library","Strategy Lab","Backtest","Watchlist","Data Center"];
+ const displayRows=tab==="Watchlist"?filtered.filter(s=>watch.includes(s.symbol)):filtered;
+ return <main className="app-shell">
+  <aside className={`sidebar ${menu?"show":""}`}><div className="brand"><div className="brand-logo">U<span>G</span></div><div><b>UGB<span>Screener</span></b><small>MARKET INTELLIGENCE TERMINAL</small></div><button className="close-menu" onClick={()=>setMenu(false)}>×</button></div>
+   <div className="workspace"><span className="pulse"/> PERSONAL WORKSPACE <b>FREE</b></div><div className="nav-caption">RESEARCH</div><nav>{nav.map((n,i)=><button key={n} className={tab===n?"active":""} onClick={()=>{setTab(n);setMenu(false)}}><span className="nav-icon">{["⌂","⌕","▦","⌘","◷","☆","⇧"][i]}</span>{n}{n==="Watchlist"&&<em>{watch.length}</em>}</button>)}</nav>
+   <div className="sidebar-bottom"><div className="side-note"><b>Built on PKScreener concepts</b><p>Open-source scanner ideas, re-engineered for a Vercel-native web workspace.</p><a href="https://github.com/pkjmesra/PKScreener" target="_blank" rel="noreferrer">View original project ↗</a></div><div className="user-row"><div className="avatar">UG</div><div><b>Underground Bulls</b><small>UGB workspace</small></div><span>•••</span></div></div>
+  </aside>
+  <section className="main-area"><header className="topbar"><button className="hamb" onClick={()=>setMenu(!menu)}>☰</button><div className="crumb">Workspace <span>/</span> <b>{tab}</b></div><div className="top-right"><span className={candles.length?"status live":"status demo"}><i/>{candles.length?"USER DATA LOADED":"DEMO MODE"}</span><button className="top-button" onClick={()=>setTab("Data Center")}>＋ Import data</button></div></header>
+   <div className="content"><div className="page-title"><div><div className="kicker">◈ UGB MARKET INTELLIGENCE</div><h1>{tab}</h1><p>{tab==="Overview"?"Your research command centre for NSE stocks, momentum and strategy validation.":"Explore market candidates, build scan conditions and test ideas against your own historical data."}</p></div><div className="title-actions"><span className="market-pill">● NSE WORKSPACE</span></div></div>
+    {error&&<div className="error-box"><b>Notice</b> {error}<button onClick={()=>setError("")}>×</button></div>}
+    {!candles.length&&<div className="demo-banner"><b>DEMO DATA</b><span>Illustrative sample rows only — not live NSE quotes. Import your own OHLCV CSV to activate real-data screening and historical backtesting.</span><button onClick={()=>setTab("Data Center")}>Import data →</button></div>}
+    {tab==="Overview"&&<><div className="metric-grid"><Metric label="UNIVERSE" value={rows.length.toString()} note={candles.length?"Uploaded symbols":"Demo sample"} /><Metric label="BULLISH SETUPS" value={bullish.toString()} note="Trend + momentum classification" green/><Metric label="BEARISH SETUPS" value={bearish.toString()} note="Weak trend classification" red/><Metric label="WATCHLIST" value={watch.length.toString()} note="Saved in this browser"/></div><div className="grid-two"><section className="panel"><div className="panel-head"><div><small>MARKET SCAN</small><h2>Signal distribution</h2></div><span className="tag">CURRENT DATASET</span></div><div className="distribution"><div className="dist-row"><span>Bullish</span><div><i style={{width:`${rows.length?bullish/rows.length*100:0}%`}}/></div><b className="green">{bullish}</b></div><div className="dist-row"><span>Neutral</span><div><i className="neutral-bar" style={{width:`${rows.length?(rows.length-bullish-bearish)/rows.length*100:0}%`}}/></div><b>{rows.length-bullish-bearish}</b></div><div className="dist-row"><span>Bearish</span><div><i className="red-bar" style={{width:`${rows.length?bearish/rows.length*100:0}%`}}/></div><b className="red">{bearish}</b></div></div><div className="panel-foot">Signals are calculated from the currently loaded dataset.</div></section><section className="panel"><div className="panel-head"><div><small>QUICK LAUNCH</small><h2>Scanner presets</h2></div></div><div className="quick-list">{["Momentum + Volume","Breakout Watch","Trend Template","Volume Expansion"].map(x=><button key={x} onClick={()=>{setScanner(x);runScan()}}><span>◈</span><b>{x}</b><i>Run scan ↗</i></button>)}</div></section></div><section className="panel"><div className="panel-head"><div><small>MARKET RADAR</small><h2>Stocks in focus</h2></div><button className="link-btn" onClick={()=>setTab("Stock Screener")}>Open full screener ↗</button></div><StockTable rows={rows.slice(0,8)} watch={watch} toggle={s=>setWatch(w=>w.includes(s)?w.filter(x=>x!==s):[...w,s])}/></section></>}
+    {(tab==="Stock Screener"||tab==="Watchlist")&&<section className="panel"><div className="panel-head"><div><small>{tab==="Watchlist"?"SAVED IDEAS":"UNIVERSE SCANNER"}</small><h2>{tab==="Watchlist"?"My watchlist":"Filter stocks"}</h2><p>{displayRows.length} matching symbols · {candles.length?"Uploaded OHLCV dataset":"Illustrative demo dataset"}</p></div><button className="button" onClick={()=>setTab("Data Center")}>＋ Load data</button></div><div className="filters"><input placeholder="Search symbol..." value={query} onChange={e=>setQuery(e.target.value)}/><select value={bias} onChange={e=>setBias(e.target.value)}><option>All</option><option>Bullish</option><option>Neutral</option><option>Bearish</option></select><label>RSI ≥ <input type="number" value={minRsi} onChange={e=>setMinRsi(e.target.value)}/></label><label>Rel. volume ≥ <input type="number" step=".1" value={minVol} onChange={e=>setMinVol(e.target.value)}/></label><button className="link-btn" onClick={()=>{setQuery("");setBias("All");setMinRsi("0");setMinVol("0")}}>Reset</button></div><StockTable rows={displayRows} watch={watch} toggle={s=>setWatch(w=>w.includes(s)?w.filter(x=>x!==s):[...w,s])}/></section>}
+    {tab==="Scanner Library"&&<div className="scanner-grid">{[{name:"Momentum + Volume",desc:"RSI strength with relative volume confirmation.",rule:"RSI ≥ 60 · Relative volume ≥ 1.5x"},{name:"Breakout Watch",desc:"Close above the previous 20-session high.",rule:"Close > prior 20-day high"},{name:"Trend Template",desc:"Price above rising medium and long-term averages.",rule:"Close > SMA20 > SMA50"},{name:"Volume Expansion",desc:"Identify unusual participation.",rule:"Relative volume ≥ 2x"},{name:"Oversold Reversal",desc:"Find deeply oversold names for manual review.",rule:"RSI ≤ 35"},{name:"Bullish / Bearish",desc:"Classify current trend and momentum.",rule:"Price + SMA20 + RSI"}].map(x=><section className="panel scanner-card" key={x.name}><div className="scanner-symbol">⌁</div><h3>{x.name}</h3><p>{x.desc}</p><code>{x.rule}</code><button className="button" onClick={()=>{setScanner(x.name);if(x.name==="Oversold Reversal"){setBias("All");setMinRsi("0");setMinVol("0")}else if(x.name==="Momentum + Volume"){setMinRsi("60");setMinVol("1.5")}else if(x.name==="Volume Expansion"){setMinVol("2")}else if(x.name==="Trend Template"){setBias("Bullish")}else if(x.name==="Bullish / Bearish"){setBias("All")}setTab("Stock Screener")}}>Open scanner ↗</button></section>)}</div>}
+    {tab==="Strategy Lab"&&<section className="panel"><div className="panel-head"><div><small>RULE DESIGNER</small><h2>Strategy builder</h2><p>Compose screening rules. The active rules apply to the Stock Screener.</p></div><span className="tag">CLIENT-SIDE</span></div><div className="strategy-grid"><div className="field"><label>Strategy preset</label><select value={scanner} onChange={e=>setScanner(e.target.value)}>{["Momentum + Volume","Breakout Watch","Trend Template","Volume Expansion","Oversold Reversal"].map(x=><option key={x}>{x}</option>)}</select></div><div className="field"><label>Minimum RSI</label><input type="number" value={minRsi} onChange={e=>setMinRsi(e.target.value)}/></div><div className="field"><label>Minimum relative volume</label><input type="number" step=".1" value={minVol} onChange={e=>setMinVol(e.target.value)}/></div><div className="field"><label>Signal direction</label><select value={bias} onChange={e=>setBias(e.target.value)}><option>All</option><option>Bullish</option><option>Bearish</option><option>Neutral</option></select></div></div><div className="strategy-result"><div><small>RESULTING CANDIDATES</small><strong>{filtered.length}</strong><span>symbols match current rule set</span></div><button className="button primary" onClick={()=>setTab("Stock Screener")}>View matches →</button></div></section>}
+    {tab==="Backtest"&&<><section className="panel"><div className="panel-head"><div><small>HISTORICAL VALIDATION</small><h2>Backtest workbench</h2><p>Rule: close above SMA20 and SMA20 above SMA50 with RSI ≥ 55. Entry at next session open.</p></div><span className="tag">OHLCV REQUIRED</span></div>{!candles.length&&<div className="empty-state"><b>Historical data not loaded</b><p>Import a multi-symbol OHLCV CSV with at least 55 bars per symbol to run a meaningful test.</p><button className="button primary" onClick={()=>setTab("Data Center")}>Open data center</button></div>}<div className="strategy-grid"><div className="field"><label>Target %</label><input type="number" value={target} onChange={e=>setTarget(e.target.value)}/></div><div className="field"><label>Stop loss %</label><input type="number" value={stop} onChange={e=>setStop(e.target.value)}/></div><div className="field"><label>Max holding bars</label><input type="number" value={hold} onChange={e=>setHold(e.target.value)}/></div><div className="field"><label>Entry rule</label><input value="Next session open" readOnly/></div></div><button className="button primary run-button" onClick={backtest} disabled={!candles.length}>Run historical backtest ↗</button></section>{trades.length>0&&<><div className="metric-grid"><Metric label="TOTAL TRADES" value={String(trades.length)} note="Simulated closed trades"/><Metric label="WIN RATE" value={`${(trades.filter(t=>t.returnPct>0).length/trades.length*100).toFixed(1)}%`} note="Profitable trades" green/><Metric label="AVG RETURN" value={pct(trades.reduce((a,t)=>a+t.returnPct,0)/trades.length)} note="Per trade"/><Metric label="NET RETURN" value={pct(trades.reduce((a,t)=>a+t.returnPct,0))} note="Sum of trade returns"/></div><section className="panel"><div className="panel-head"><h2>Trade ledger</h2><button className="link-btn" onClick={()=>{const csv=["Symbol,Entry Date,Exit Date,Entry,Exit,Return %,Exit Reason",...trades.map(t=>[t.symbol,t.entryDate,t.exitDate,t.entry,t.exit,t.returnPct.toFixed(2),t.result].join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="ugb-backtest-trades.csv";a.click();URL.revokeObjectURL(a.href)}}>Export CSV ↓</button></div><div className="table-wrap"><table><thead><tr><th>SYMBOL</th><th>ENTRY DATE</th><th>EXIT DATE</th><th>ENTRY</th><th>EXIT</th><th>RETURN</th><th>EXIT REASON</th></tr></thead><tbody>{trades.map((t,i)=><tr key={i}><td>{t.symbol}</td><td>{t.entryDate}</td><td>{t.exitDate}</td><td>{fmt(t.entry)}</td><td>{fmt(t.exit)}</td><td className={t.returnPct>=0?"green":"red"}>{pct(t.returnPct)}</td><td>{t.result}</td></tr>)}</tbody></table></div></section></>}</>}
+    {tab==="Data Center"&&<div className="data-layout"><section className="panel"><div className="panel-head"><div><small>DATA INGESTION</small><h2>Import historical OHLCV</h2><p>Runs locally in your browser. Your CSV is not uploaded to a server.</p></div><span className="tag">PRIVATE TO THIS BROWSER</span></div><div className="upload-zone"><div className="upload-icon">⇧</div><h3>Drop your CSV here</h3><p>Required columns: Date, Open, High, Low, Close, Volume. Optional: Symbol.</p><label className="button primary">Choose CSV file<input type="file" accept=".csv,text/csv" onChange={e=>upload(e.target.files?.[0])} hidden/></label></div><div className="format-note"><b>Example CSV header</b><code>Date,Symbol,Open,High,Low,Close,Volume</code><span>Use daily or intraday OHLCV candles. For multi-stock backtests, include a Symbol column. Each symbol should have chronological data.</span></div>{candles.length>0&&<div className="loaded-data"><b>✓ {candles.length.toLocaleString()} candles loaded</b><span>{new Set(candles.map(c=>c.symbol)).size} symbols · {candles[0].date} to {candles[candles.length-1].date}</span><button className="link-btn" onClick={()=>{setCandles([]);setTrades([]);localStorage.removeItem("ugb-candles")}}>Clear imported data</button></div>}</section><section className="panel"><div className="panel-head"><div><small>DATA STATUS</small><h2>Workspace data</h2></div></div><div className="data-stat"><span>Source</span><b>{candles.length?"User CSV":"Illustrative sample"}</b></div><div className="data-stat"><span>Persistent storage</span><b>Browser local storage</b></div><div className="data-stat"><span>Cloud sync</span><b>Not configured</b></div><div className="data-stat"><span>Live NSE feed</span><b>Provider connection required</b></div><div className="data-warning">No live market feed is bundled. Connect a licensed broker/data vendor API before using this as a live scanner.</div></section></div>}
+    <footer><span>UGBScreener <b>·</b> Inspired by PKScreener open-source scanner concepts</span><span>Vercel-native build · Not investment advice</span></footer>
+   </div>
+  </section>
+ </main>
 }
-
-function Metric({ title, value, change, positive, sub }: { title: string; value: string; change: string; positive: boolean; sub: string }) {
-  return <div className="metric"><div className="metric-top"><span>{title}</span><span className="metric-icon"><Activity size={15} /></span></div><b className="metric-value">{value}</b><div className={positive ? "metric-change positive" : "metric-change negative"}>{positive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />} {change}</div><small>{sub}</small></div>;
-}
-
-function StockRow({ stock: s, saved, onSave }: { stock: Stock; saved: boolean; onSave: () => void }) {
-  return <tr><td><div className="stock-cell"><div className="ticker-icon">{s.symbol.slice(0, 2)}</div><div><b>{s.symbol}</b><small>{s.name}</small></div></div></td><td><span className="sector">{s.sector}</span></td><td className="right price">{money(s.price)}</td><td className={`right ${s.change >= 0 ? "positive" : "negative"}`}>{s.change > 0 ? "+" : ""}{s.change.toFixed(2)}%</td><td className="right"><span className={`rsi ${s.rsi >= 60 ? "rsi-high" : s.rsi <= 40 ? "rsi-low" : ""}`}>{s.rsi}</span></td><td className="right">{s.relativeVolume.toFixed(1)}x</td><td><span className={`signal ${s.signal.toLowerCase()}`}><i />{s.signal}</span></td><td><button className="save-btn" onClick={onSave} title={saved ? "Remove from watchlist" : "Add to watchlist"}>{saved ? <BookmarkCheck size={16} /> : <Bookmark size={16} />}</button></td></tr>;
-}
+function Metric({label,value,note,green,red}:{label:string;value:string;note:string;green?:boolean;red?:boolean}){return <div className="metric"><small>{label}</small><strong className={green?"green":red?"red":""}>{value}</strong><span>{note}</span></div>}
+function StockTable({rows,watch,toggle}:{rows:StockRow[];watch:string[];toggle:(s:string)=>void}){return <div className="table-wrap"><table><thead><tr><th>STOCK</th><th className="right">LTP</th><th className="right">CHANGE</th><th className="right">RSI</th><th className="right">REL. VOL</th><th className="right">20D HIGH</th><th>SIGNAL</th><th/></tr></thead><tbody>{rows.map(s=><tr key={s.symbol}><td><b>{s.symbol}</b><small className="subline">{s.candles.length?"OHLCV imported":"Sample symbol"}</small></td><td className="right">{fmt(s.price)}</td><td className={`right ${s.change>=0?"green":"red"}`}>{pct(s.change)}</td><td className="right">{s.rsi.toFixed(1)}</td><td className="right">{s.relVol.toFixed(2)}x</td><td className="right">{Number.isFinite(s.high20)?fmt(s.high20):"—"}</td><td><span className={`signal ${s.signal.toLowerCase()}`}>{s.signal}</span></td><td><button className={watch.includes(s.symbol)?"star saved":"star"} onClick={()=>toggle(s.symbol)} title="Toggle watchlist">{watch.includes(s.symbol)?"★":"☆"}</button></td></tr>)}</tbody></table>{!rows.length&&<div className="empty-state">No matching stocks. Change the filters or import a dataset.</div>}</div>}
