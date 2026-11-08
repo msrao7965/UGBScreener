@@ -37,6 +37,7 @@ export default function Home() {
 
   const toggleWatch = (symbol: string) => setWatch((w) => w.includes(symbol) ? w.filter((x) => x !== symbol) : [...w, symbol]);
   const nav: Tab[] = ["Overview", "All stocks", "Breakouts", "Swing radar", "Backtest lab"];
+  const nav: Tab[] = ["Overview", "All stocks", "Breakouts", "Swing radar", "Backtest lab"];
   const shown = tab === "Breakouts"
     ? filtered.filter((s) => s.change >= 2 && s.relativeVolume >= 1.5)
     : tab === "Swing radar"
